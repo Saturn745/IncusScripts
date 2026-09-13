@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 community-scripts ORG
+# Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (Canbiz)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://docmost.com/
+# Source: https://docmost.com/ | Github: https://github.com/docmost/docmost
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -14,60 +14,43 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt-get install -y \
-  gpg \
+$STD apt install -y \
   redis \
-  make \
-  postgresql
+  make
 msg_ok "Installed Dependencies"
 
-msg_info "Setting up Node.js Repository"
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" >/etc/apt/sources.list.d/nodesource.list
-msg_ok "Set up Node.js Repository"
+NODE_VERSION="26" NODE_MODULE="pnpm@$(curl -s https://raw.githubusercontent.com/docmost/docmost/main/package.json | jq -r '.packageManager | split("@")[1]')" setup_nodejs
+PG_VERSION="16" setup_postgresql
+PG_DB_NAME="docmost_db" PG_DB_USER="docmost_user" setup_postgresql_db
+fetch_and_deploy_gh_release "docmost" "docmost/docmost" "tarball"
 
-msg_info "Installing Node.js"
-$STD apt-get update
-$STD apt-get install -y nodejs
-$STD npm install -g pnpm@10.4.0
-msg_ok "Installed Node.js"
-
-msg_info "Setting up PostgreSQL"
-DB_NAME="docmost_db"
-DB_USER="docmost_user"
-DB_PASS="$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | cut -c1-13)"
-$STD sudo -u postgres psql -c "CREATE ROLE $DB_USER WITH LOGIN PASSWORD '$DB_PASS';"
-$STD sudo -u postgres psql -c "CREATE DATABASE $DB_NAME WITH OWNER $DB_USER ENCODING 'UTF8' TEMPLATE template0;"
-$STD sudo -u postgres psql -c "ALTER ROLE $DB_USER SET client_encoding TO 'utf8';"
-$STD sudo -u postgres psql -c "ALTER ROLE $DB_USER SET default_transaction_isolation TO 'read committed';"
-$STD sudo -u postgres psql -c "ALTER ROLE $DB_USER SET timezone TO 'UTC'"
-{
-  echo "Docmost-Credentials"
-  echo "Database Name: $DB_NAME"
-  echo "Database User: $DB_USER"
-  echo "Database Password: $DB_PASS"
-} >>~/docmost.creds
-msg_ok "Set up PostgreSQL"
-
-msg_info "Installing Docmost (Patience)"
-temp_file=$(mktemp)
-RELEASE=$(curl -fsSL https://api.github.com/repos/docmost/docmost/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
-curl -fsSL "https://github.com/docmost/docmost/archive/refs/tags/v${RELEASE}.tar.gz" -o ""$temp_file""
-tar -xzf "$temp_file"
-mv docmost-${RELEASE} /opt/docmost
+msg_info "Configuring Docmost (Patience)"
 cd /opt/docmost
+
+# Fix: Docmost EE (audit logs etc.) lives in a git submodule that is NOT
+# included in GitHub tarballs.  The community NoopAuditService exists but
+# is only exported by CoreModule – child modules such as UserModule cannot
+# resolve it.  Making CoreModule @Global() exposes the token app-wide.
+if [[ ! -f /opt/docmost/apps/server/src/ee/ee.module.ts ]] &&
+  ! grep -q '@Global()' /opt/docmost/apps/server/src/core/core.module.ts 2>/dev/null; then
+  sed -i '/^  Module,$/a\  Global,' /opt/docmost/apps/server/src/core/core.module.ts
+  sed -i '/^@Module({$/i @Global()' /opt/docmost/apps/server/src/core/core.module.ts
+fi
+
 mv .env.example .env
 mkdir data
 sed -i -e "s|APP_SECRET=.*|APP_SECRET=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | cut -c1-32)|" \
-  -e "s|DATABASE_URL=.*|DATABASE_URL=postgres://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME|" \
+  -e "s|DATABASE_URL=.*|DATABASE_URL=\"postgres://$PG_DB_USER:$PG_DB_PASS@localhost:5432/$PG_DB_NAME?schema=public\"|" \
   -e "s|FILE_UPLOAD_SIZE_LIMIT=.*|FILE_UPLOAD_SIZE_LIMIT=50mb|" \
+  -e "s|DRAWIO_URL=.*|DRAWIO_URL=https://embed.diagrams.net|" \
+  -e "s|DISABLE_TELEMETRY=.*|DISABLE_TELEMETRY=true|" \
+  -e "s|APP_URL=.*|APP_URL=http://$LOCAL_IP:3000|" \
+  -e "s|^STORAGE_DRIVER=azure|#STORAGE_DRIVER=azure|" \
   /opt/docmost/.env
 export NODE_OPTIONS="--max-old-space-size=2048"
 $STD pnpm install
 $STD pnpm build
-echo "${RELEASE}" >"/opt/${APPLICATION}_version.txt"
-msg_ok "Installed Docmost"
+msg_ok "Configured Docmost"
 
 msg_info "Creating Service"
 cat <<EOF >/etc/systemd/system/docmost.service
@@ -89,11 +72,6 @@ msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-rm -f "$temp_file"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

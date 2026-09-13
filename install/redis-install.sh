@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
-# Author: tteck (tteckster)
+# Copyright (c) 2021-2026 tteck
+# Author: tteck (tteckster) | MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://redis.io/
 
@@ -13,27 +13,39 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Dependencies"
-$STD apt-get install -y apt-transport-https
-$STD apt-get install -y gpg
-$STD apt-get install -y lsb-release
-msg_ok "Installed Dependencies"
+setup_deb_based() {
+  msg_info "Installing Dependencies"
+  $STD apt install -y apt-transport-https
+  msg_ok "Installed Dependencies"
 
-msg_info "Installing Redis"
-curl -fsSL "https://packages.redis.io/gpg" | gpg --dearmor >/usr/share/keyrings/redis-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" >/etc/apt/sources.list.d/redis.list
-$STD apt-get update
-$STD apt-get install -y redis
-sed -i 's/^bind .*/bind 0.0.0.0/' /etc/redis/redis.conf
-systemctl enable -q --now redis-server
-msg_ok "Installed Redis"
+  msg_info "Setting up Redis Repository"
+  setup_deb822_repo \
+    "redis" \
+    "https://packages.redis.io/gpg" \
+    "https://packages.redis.io/deb" \
+    "trixie"
+  msg_ok "Setup Redis Repository"
+
+  msg_info "Setting up Redis"
+  $STD apt install -y redis
+  sed -i 's/^bind .*/bind 0.0.0.0/' /etc/redis/redis.conf
+  systemctl enable -q --now redis-server
+  msg_ok "Setup Redis"
+}
+
+setup_alpine() {
+  msg_info "Installing Redis"
+  $STD apk add redis
+  $STD sed -i 's/^bind .*/bind 0.0.0.0/' /etc/redis.conf
+  $STD rc-update add redis default
+  $STD rc-service redis start
+  msg_ok "Installed Redis"
+}
+
+run_os_setup
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

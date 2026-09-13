@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 community-scripts ORG
+# Copyright (c) 2021-2026 community-scripts ORG
 # Author: Jakub Matraszek (jmatraszek)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://www.cross-seed.org
+# Source: https://www.cross-seed.org | Github: https://github.com/cross-seed/cross-seed
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -14,19 +14,10 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt-get install -y gnupg
+$STD apt install -y build-essential
 msg_ok "Installed Dependencies"
 
-msg_info "Setting up Node.js Repository"
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_23.x nodistro main" >/etc/apt/sources.list.d/nodesource.list
-msg_ok "Setup Node.js Repository"
-
-msg_info "Setting up Node.js"
-$STD apt-get update
-$STD apt-get install -y nodejs
-msg_ok "Setup Node.js"
+NODE_VERSION="24" setup_nodejs
 
 msg_info "Setup Cross-Seed"
 $STD npm install cross-seed@latest -g
@@ -40,8 +31,9 @@ Description=Cross-Seed daemon Service
 After=network.target
 
 [Service]
-ExecStart=cross-seed daemon
-Restart=always
+ExecStart=/usr/bin/cross-seed daemon
+Restart=on-failure
+RestartSec=30
 User=root
 
 [Install]
@@ -52,10 +44,6 @@ msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

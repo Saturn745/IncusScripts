@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://shinobi.video/
@@ -13,23 +13,16 @@ setting_up_container
 network_check
 update_os
 
+setup_hwaccel
+
 msg_info "Installing Dependencies"
 $STD apt-get install -y make zip net-tools git
 $STD apt-get install -y gcc g++ cmake
 $STD apt-get install -y ca-certificates
-$STD apt-get install -y gnupg
 msg_ok "Installed Dependencies"
 
-msg_info "Setting up Node.js Repository"
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" >/etc/apt/sources.list.d/nodesource.list
-msg_ok "Set up Node.js Repository"
-
-msg_info "Installing Node.js"
-$STD apt-get update
-$STD apt-get install -y nodejs
-msg_ok "Installed Node.js"
+NODE_VERSION="22" setup_nodejs
+setup_mariadb
 
 msg_info "Installing FFMPEG"
 $STD apt-get install -y ffmpeg
@@ -42,7 +35,7 @@ cd Shinobi
 gitVersionNumber=$(git rev-parse HEAD)
 theDateRightNow=$(date)
 touch version.json
-chmod 777 version.json
+chmod 644 version.json
 echo '{"Product" : "'"Shinobi"'" , "Branch" : "'"master"'" , "Version" : "'"$gitVersionNumber"'" , "Date" : "'"$theDateRightNow"'" , "Repository" : "'"https://gitlab.com/Shinobi-Systems/Shinobi.git"'"}' >version.json
 msg_ok "Cloned Shinobi"
 
@@ -51,9 +44,8 @@ sqluser="root"
 sqlpass="root"
 echo "mariadb-server mariadb-server/root_password password $sqlpass" | debconf-set-selections
 echo "mariadb-server mariadb-server/root_password_again password $sqlpass" | debconf-set-selections
-$STD apt-get install -y mariadb-server
 service mysql start
-mysql -u "$sqluser" -p"$sqlpass" -e "source sql/user.sql" || true
+$STD mariadb -u "$sqluser" -p"$sqlpass" -e "source sql/user.sql" || true
 msg_ok "Installed Database"
 
 msg_info "Installing Shinobi"
@@ -62,7 +54,7 @@ cronKey=$(head -c 1024 </dev/urandom | sha256sum | awk '{print substr($1,1,29)}'
 sed -i -e 's/Shinobi/'"$cronKey"'/g' conf.json
 cp super.sample.json super.json
 $STD npm i npm -g
-$STD npm install --unsafe-perm
+$STD npm install
 $STD npm install pm2@latest -g
 chmod -R 755 .
 touch INSTALL/installed.txt
@@ -77,10 +69,6 @@ msg_ok "Installed Shinobi"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
