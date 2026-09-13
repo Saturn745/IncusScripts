@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
-# Author: tteck (tteckster)
-# Co-Author: remz1337
+# Copyright (c) 2021-2026 community-scripts ORG
+# Author: mikolaj92
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/janeczku/calibre-web
 
@@ -15,55 +14,65 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt-get install -y imagemagick
+$STD apt install -y \
+  build-essential \
+  python3 \
+  python3-dev \
+  libldap2-dev \
+  libsasl2-dev \
+  libssl-dev \
+  imagemagick \
+  libpango-1.0-0 \
+  libharfbuzz0b \
+  libpangoft2-1.0-0 \
+  fonts-liberation
 msg_ok "Installed Dependencies"
 
+msg_info "Installing Calibre (for eBook conversion)"
+$STD apt install -y calibre
+msg_ok "Installed Calibre"
+
+fetch_and_deploy_gh_release "calibreweb" "janeczku/calibre-web" "prebuild" "latest" "/opt/calibre-web" "calibreweb*.tar.gz"
+setup_uv
+
 msg_info "Installing Python Dependencies"
-$STD apt-get -y install python3-pip
-rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED
+cd /opt/calibre-web
+$STD uv venv
+$STD uv pip install --python /opt/calibre-web/.venv/bin/python --no-cache-dir --upgrade pip setuptools wheel
+$STD uv pip install --python /opt/calibre-web/.venv/bin/python --no-cache-dir .
 msg_ok "Installed Python Dependencies"
 
-msg_info "Installing Kepubify"
-mkdir -p /opt/kepubify
-cd /opt/kepubify
-curl -fsSLO https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-64bit &>/dev/null
-chmod +x kepubify-linux-64bit
-msg_ok "Installed Kepubify"
-
-msg_info "Installing Calibre-Web"
-mkdir -p /opt/calibre-web
-$STD apt-get install -y calibre
-$STD curl -fsSL https://github.com/janeczku/calibre-web/raw/master/library/metadata.db -o /opt/calibre-web/metadata.db
-$STD pip install calibreweb
-$STD pip install jsonschema
-msg_ok "Installed Calibre-Web"
+mkdir -p /opt/calibre-web/data /opt/calibre-web-library
+if [[ ! -f /opt/calibre-web-library/metadata.db ]]; then
+  msg_info "Creating Empty Calibre Library"
+  $STD calibredb list --with-library /opt/calibre-web-library
+  msg_ok "Created Empty Calibre Library"
+fi
 
 msg_info "Creating Service"
-cat <<EOF >/etc/systemd/system/cps.service
+cat <<EOF >/etc/systemd/system/calibre-web.service
 [Unit]
-Description=Calibre-Web Server
+Description=Calibre-Web Service
 After=network.target
 
 [Service]
 Type=simple
+User=root
+Environment="QTWEBENGINE_CHROMIUM_FLAGS=--no-sandbox"
+Environment=HOME=/opt/calibre-web/data
 WorkingDirectory=/opt/calibre-web
-ExecStart=/usr/local/bin/cps
-TimeoutStopSec=20
-KillMode=process
+ExecStart=/opt/calibre-web/.venv/bin/cps -p /opt/calibre-web/data/app.db
 Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl enable -q --now cps
+systemctl enable -q --now calibre-web
 msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

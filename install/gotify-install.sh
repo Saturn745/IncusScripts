@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://gotify.net/
+# Source: https://gotify.net/ | Github: https://github.com/gotify/server
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -13,16 +13,8 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Gotify"
-RELEASE=$(curl -fsSL https://api.github.com/repos/gotify/server/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
-mkdir -p /opt/gotify
-cd /opt/gotify
-curl -fsSL "https://github.com/gotify/server/releases/download/v${RELEASE}/gotify-linux-amd64.zip" -o $(basename "https://github.com/gotify/server/releases/download/v${RELEASE}/gotify-linux-amd64.zip")
-unzip -q gotify-linux-amd64.zip
-rm -rf gotify-linux-amd64.zip
-chmod +x gotify-linux-amd64
-echo "${RELEASE}" >/opt/${APPLICATION}_version.txt
-msg_ok "Installed Gotify"
+fetch_and_deploy_gh_release "gotify" "gotify/server" "prebuild" "latest" "/opt/gotify" "gotify-linux-$(arch_resolve).zip"
+chmod +x /opt/gotify/gotify-linux-$(arch_resolve)
 
 msg_info "Creating Service"
 cat <<EOF >/etc/systemd/system/gotify.service
@@ -35,7 +27,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/gotify
-ExecStart=/opt/gotify/./gotify-linux-amd64
+ExecStart=/opt/gotify/gotify-linux-$(arch_resolve) serve
 Restart=always
 RestartSec=3
 
@@ -47,10 +39,6 @@ msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

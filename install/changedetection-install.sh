@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
-# Author: tteck (tteckster)
+# Copyright (c) 2021-2026 tteck
+# Author: tteck (tteckster) | Co-Author: CrazyWolf13, MickLesk
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://changedetection.io/
+# Source: https://changedetection.io/ | Github: https://github.com/dgtlmoon/changedetection.io
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -18,7 +18,6 @@ $STD apt-get install -y \
   git \
   build-essential \
   dumb-init \
-  gconf-service \
   libjpeg-dev \
   libatk-bridge2.0-0 \
   libasound2 \
@@ -29,8 +28,7 @@ $STD apt-get install -y \
   libexpat1 \
   libgbm-dev \
   libgbm1 \
-  libgconf-2-4 \
-  libgdk-pixbuf2.0-0 \
+  libgdk-pixbuf-2.0-0 \
   libglib2.0-0 \
   libgtk-3-0 \
   libnspr4 \
@@ -40,39 +38,31 @@ $STD apt-get install -y \
   qpdf \
   xdg-utils \
   xvfb \
-  ca-certificates \
-  gnupg
+  ca-certificates
 msg_ok "Installed Dependencies"
 
-msg_info "Setup Python3"
-$STD apt-get install -y \
-  python3 \
-  python3-dev \
-  python3-pip
-rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED
-msg_ok "Setup Python3"
+PYTHON_VERSION="3.13" setup_uv
 
-msg_info "Setting up Node.js Repository"
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" >/etc/apt/sources.list.d/nodesource.list
-msg_ok "Set up Node.js Repository"
-
-msg_info "Installing Node.js"
-$STD apt-get update
-$STD apt-get install -y nodejs
-msg_ok "Installed Node.js"
+NODE_VERSION="24" setup_nodejs
 
 msg_info "Installing Change Detection"
-mkdir /opt/changedetection
-$STD pip3 install changedetection.io
+mkdir -p /opt/changedetection
+$STD uv venv --clear /opt/changedetection/.venv
+$STD /opt/changedetection/.venv/bin/python -m ensurepip --upgrade
+$STD /opt/changedetection/.venv/bin/python -m pip install --upgrade pip
+$STD /opt/changedetection/.venv/bin/python -m pip install changedetection.io
+cat <<EOF >/opt/changedetection/.env
+WEBDRIVER_URL=http://127.0.0.1:4444/wd/hub
+PLAYWRIGHT_DRIVER_URL=ws://localhost:3000/chrome?launch=eyJkZWZhdWx0Vmlld3BvcnQiOnsiaGVpZ2h0Ijo3MjAsIndpZHRoIjoxMjgwfSwiaGVhZGxlc3MiOmZhbHNlLCJzdGVhbHRoIjp0cnVlfQ==&blockAds=true
+EOF
 msg_ok "Installed Change Detection"
 
 msg_info "Installing Browserless & Playwright"
 mkdir /opt/browserless
-$STD python3 -m pip install playwright
+$STD /opt/changedetection/.venv/bin/python -m pip install playwright
 $STD git clone https://github.com/browserless/chrome /opt/browserless
-$STD npm install --prefix /opt/browserless
+$STD npm ci --include=optional --include=dev --prefix /opt/browserless
+$STD npm install --save-exact playwright-core@1.62.1 --prefix /opt/browserless
 $STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps &>/dev/null
 $STD /opt/browserless/node_modules/playwright-core/cli.js install --force chrome &>/dev/null
 $STD /opt/browserless/node_modules/playwright-core/cli.js install chromium firefox webkit &>/dev/null
@@ -89,10 +79,9 @@ $STD apt-get install -y \
   fonts-freefont-ttf \
   fonts-gfs-neohellenic \
   fonts-indic fonts-ipafont-gothic \
-  fonts-kacst fonts-liberation \
+  fonts-kacst-one fonts-liberation \
   fonts-noto-cjk \
   fonts-noto-color-emoji \
-  msttcorefonts \
   fonts-roboto \
   fonts-thai-tlwg \
   fonts-wqy-zenhei
@@ -122,12 +111,13 @@ Description=Change Detection
 After=network-online.target
 After=network.target browserless.service
 Wants=browserless.service
+
 [Service]
 Type=simple
+EnvironmentFile=/opt/changedetection/.env
 WorkingDirectory=/opt/changedetection
-Environment=WEBDRIVER_URL=http://127.0.0.1:4444/wd/hub
-Environment=PLAYWRIGHT_DRIVER_URL=ws://localhost:3000/chrome?launch={"defaultViewport":{"height":720,"width":1280},"headless":false,"stealth":true}&blockAds=true
-ExecStart=changedetection.io -d /opt/changedetection -p 5000
+ExecStart=/opt/changedetection/.venv/bin/changedetection.io -d /opt/changedetection -p 5000
+
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -136,25 +126,22 @@ cat <<EOF >/etc/systemd/system/browserless.service
 [Unit]
 Description=browserless service
 After=network.target
+
 [Service]
 Environment=CONNECTION_TIMEOUT=60000
 WorkingDirectory=/opt/browserless
 ExecStart=/opt/browserless/scripts/start.sh
 SyslogIdentifier=browserless
+
 [Install]
 WantedBy=default.target
 EOF
-
 systemctl enable -q --now browserless
 systemctl enable -q --now changedetection
 msg_ok "Created Services"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

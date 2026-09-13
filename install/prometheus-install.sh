@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 community-scripts ORG
+# Copyright (c) 2021-2026 community-scripts ORG
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://prometheus.io/
+# Source: https://prometheus.io/ | Github: https://github.com/prometheus/prometheus
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -13,19 +13,17 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Prometheus"
-RELEASE=$(curl -fsSL https://api.github.com/repos/prometheus/prometheus/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
-mkdir -p /etc/prometheus
-mkdir -p /var/lib/prometheus
-curl -fsSL "https://github.com/prometheus/prometheus/releases/download/v${RELEASE}/prometheus-${RELEASE}.linux-amd64.tar.gz" -o $(basename "https://github.com/prometheus/prometheus/releases/download/v${RELEASE}/prometheus-${RELEASE}.linux-amd64.tar.gz")
-tar -xf prometheus-${RELEASE}.linux-amd64.tar.gz
-mv prometheus-${RELEASE}.linux-amd64/prometheus prometheus-${RELEASE}.linux-amd64/promtool /usr/local/bin/
-mv prometheus-${RELEASE}.linux-amd64/prometheus.yml /etc/prometheus/prometheus.yml
-echo "${RELEASE}" >/opt/${APPLICATION}_version.txt
-msg_ok "Installed Prometheus"
+setup_deb_based() {
+  fetch_and_deploy_gh_release "prometheus" "prometheus/prometheus" "prebuild" "latest" "/usr/local/bin" "*linux-$(arch_resolve).tar.gz"
 
-msg_info "Creating Service"
-cat <<EOF >/etc/systemd/system/prometheus.service
+  msg_info "Installing Prometheus"
+  mkdir -p /etc/prometheus
+  mkdir -p /var/lib/prometheus
+  mv /usr/local/bin/prometheus.yml /etc/prometheus/prometheus.yml
+  msg_ok "Installed Prometheus"
+
+  msg_info "Creating Service"
+  cat <<'EOF' >/etc/systemd/system/prometheus.service
 [Unit]
 Description=Prometheus
 Wants=network-online.target
@@ -39,21 +37,33 @@ ExecStart=/usr/local/bin/prometheus \
     --config.file=/etc/prometheus/prometheus.yml \
     --storage.tsdb.path=/var/lib/prometheus/ \
     --web.listen-address=0.0.0.0:9090
-ExecReload=/bin/kill -HUP \$MAINPID
+ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl enable -q --now prometheus
-msg_ok "Created Service"
+  systemctl enable -q --now prometheus
+  msg_ok "Created Service"
+}
+
+setup_alpine() {
+  msg_info "Installing Prometheus"
+  $STD apk add --no-cache prometheus
+  msg_ok "Installed Prometheus"
+
+  msg_info "Enabling Prometheus Service"
+  $STD rc-update add prometheus default
+  msg_ok "Enabled Prometheus Service"
+
+  msg_info "Starting Prometheus"
+  $STD service prometheus start
+  msg_ok "Started Prometheus"
+}
+
+run_os_setup
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-rm -rf prometheus-${RELEASE}.linux-amd64 prometheus-${RELEASE}.linux-amd64.tar.gz
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
