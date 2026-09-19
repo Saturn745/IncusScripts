@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck
 # Co-Author: havardthom
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
@@ -15,19 +15,37 @@ network_check
 update_os
 
 msg_info "Installing Cockpit"
-source /etc/os-release
-echo "deb http://deb.debian.org/debian ${VERSION_CODENAME}-backports main" >/etc/apt/sources.list.d/backports.list
-$STD apt-get update
-$STD apt-get install -t ${VERSION_CODENAME}-backports cockpit --no-install-recommends -y
+CODENAME=$(get_os_info codename)
+cat <<EOF >/etc/apt/sources.list.d/debian-backports.sources
+Types: deb deb-src
+URIs: http://deb.debian.org/debian
+Suites: ${CODENAME}-backports
+Components: main
+Enabled: yes
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+EOF
+
+$STD apt update
+$STD apt install -t ${CODENAME}-backports cockpit cracklib-runtime --no-install-recommends -y
 sed -i "s/root//g" /etc/cockpit/disallowed-users
 msg_ok "Installed Cockpit"
 
+# 45Drives only publishes amd64 packages
+[[ "$(arch_resolve)" == "arm64" ]] || read -r -p "Would you like to install 45Drives' cockpit-file-sharing, cockpit-identities, and cockpit-navigator  <y/N> " prompt
+if [[ "${prompt,,}" =~ ^(y|yes)$ ]]; then
+  msg_info "Installing 45Drives' cockpit extensions"
+  setup_deb822_repo "45drives" \
+    "https://repo.45drives.com/key/gpg.asc" \
+    "https://repo.45drives.com/enterprise/debian" \
+    "${CODENAME}" \
+    "main" \
+    "amd64"
+  $STD apt install -y cockpit-file-sharing cockpit-identities cockpit-navigator
+  msg_ok "Installed 45Drives' cockpit extensions"
+fi
+
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
