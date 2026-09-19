@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # Co-Author: MickLesk (Canbiz)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
@@ -15,17 +15,20 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt-get install -y \
-  gpg \
+$STD apt install -y \
   git-core \
   mediainfo
 
-cat <<EOF >/etc/apt/sources.list.d/non-free.list
-deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+cat <<EOF >/etc/apt/sources.list.d/non-free.sources
+Types: deb
+URIs: https://deb.debian.org/debian
+Suites: trixie
+Components: non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
-$STD apt-get update
-$STD apt-get install -y unrar
-rm /etc/apt/sources.list.d/non-free.list
+$STD apt update
+$STD apt install -y unrar
+rm /etc/apt/sources.list.d/non-free.sources
 msg_ok "Installed Dependencies"
 
 msg_info "Installing Medusa"
@@ -53,10 +56,6 @@ msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
