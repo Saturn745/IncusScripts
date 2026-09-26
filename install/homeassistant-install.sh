@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://www.home-assistant.io/
@@ -14,7 +14,7 @@ network_check
 update_os
 
 msg_info "Setup Python3"
-$STD apt-get install -y \
+$STD apt install -y \
   python3 \
   python3-dev \
   python3-pip \
@@ -30,32 +30,10 @@ get_latest_release() {
   curl -fsSL https://api.github.com/repos/$1/releases/latest | grep '"tag_name":' | cut -d'"' -f4
 }
 
-DOCKER_LATEST_VERSION=$(get_latest_release "moby/moby")
 CORE_LATEST_VERSION=$(get_latest_release "home-assistant/core")
-PORTAINER_LATEST_VERSION=$(get_latest_release "portainer/portainer")
 
-msg_info "Installing Docker $DOCKER_LATEST_VERSION"
-DOCKER_CONFIG_PATH='/etc/docker/daemon.json'
-mkdir -p $(dirname $DOCKER_CONFIG_PATH)
-echo -e '{\n  "log-driver": "journald"\n}' >/etc/docker/daemon.json
-$STD sh <(curl -fsSL https://get.docker.com)
-msg_ok "Installed Docker $DOCKER_LATEST_VERSION"
-
-msg_info "Pulling Portainer $PORTAINER_LATEST_VERSION Image"
-$STD docker pull portainer/portainer-ce:latest
-msg_ok "Pulled Portainer $PORTAINER_LATEST_VERSION Image"
-
-msg_info "Installing Portainer $PORTAINER_LATEST_VERSION"
-$STD docker volume create portainer_data
-$STD docker run -d \
-  -p 8000:8000 \
-  -p 9443:9443 \
-  --name=portainer \
-  --restart=always \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v portainer_data:/data \
-  portainer/portainer-ce:latest
-msg_ok "Installed Portainer $PORTAINER_LATEST_VERSION"
+setup_docker
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/portainer.sh)" <<<"y"
 
 msg_info "Pulling Home Assistant $CORE_LATEST_VERSION Image"
 $STD docker pull ghcr.io/home-assistant/home-assistant:stable
@@ -78,10 +56,6 @@ msg_ok "Installed Home Assistant $CORE_LATEST_VERSION"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
