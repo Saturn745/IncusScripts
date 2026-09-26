@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/leiweibau/Pi.Alert/
@@ -14,7 +14,7 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt-get -y install \
+$STD apt -y install \
   apt-utils \
   avahi-utils \
   lighttpd \
@@ -27,11 +27,15 @@ $STD apt-get -y install \
   libwww-perl \
   nmap \
   aria2 \
-  wakeonlan
+  wakeonlan \
+  fping \
+  zip \
+  libtext-csv-perl \
+  cron
 msg_ok "Installed Dependencies"
 
 msg_info "Installing PHP Dependencies"
-$STD apt-get -y install \
+$STD apt -y install \
   php \
   php-cgi \
   php-fpm \
@@ -43,16 +47,21 @@ service lighttpd force-reload
 msg_ok "Installed PHP Dependencies"
 
 msg_info "Installing Python Dependencies"
-$STD apt-get -y install \
+$STD apt -y install \
   python3-pip \
   python3-requests \
   python3-tz \
-  python3-tzlocal
+  python3-tzlocal \
+  python3-aiohttp \
+  python3-cryptography
 rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED
 $STD pip3 install mac-vendor-lookup
 $STD pip3 install fritzconnection
 $STD pip3 install cryptography
 $STD pip3 install pyunifi
+$STD pip3 install openwrt-luci-rpc
+$STD pip3 install asusrouter
+$STD pip3 install paho-mqtt
 msg_ok "Installed Python Dependencies"
 
 msg_info "Installing Pi.Alert"
@@ -91,10 +100,6 @@ msg_ok "Finished Pi.Alert Scan"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://triliumnext.github.io/Docs/
+# Source: https://github.com/TriliumNext/Trilium
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -13,14 +13,7 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Setup TriliumNext"
-cd /opt
-RELEASE=$(curl -fsSL https://api.github.com/repos/TriliumNext/Notes/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
-curl -fsSL "https://github.com/TriliumNext/Notes/releases/download/v${RELEASE}/TriliumNextNotes-Server-v${RELEASE}-linux-x64.tar.xz" -o $(basename "https://github.com/TriliumNext/Notes/releases/download/v${RELEASE}/TriliumNextNotes-Server-v${RELEASE}-linux-x64.tar.xz")
-tar -xf TriliumNextNotes-Server-v${RELEASE}-linux-x64.tar.xz
-mv TriliumNextNotes-Server-$RELEASE-linux-x64 /opt/trilium
-echo "${RELEASE}" >"/opt/${APPLICATION}_version.txt"
-msg_ok "Setup TriliumNext"
+fetch_and_deploy_gh_release "Trilium" "TriliumNext/Trilium" "prebuild" "latest" "/opt/trilium" "TriliumNotes-Server-*linux-$(arch_resolve "x64" "arm64").tar.xz"
 
 msg_info "Creating Service"
 cat <<EOF >/etc/systemd/system/trilium.service
@@ -44,11 +37,6 @@ msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-rm -rf /opt/TriliumNextNotes-Server-${RELEASE}-linux-x64.tar.xz
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

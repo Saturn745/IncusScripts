@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 community-scripts ORG
+# Copyright (c) 2021-2026 community-scripts ORG
 # Author: kristocopani
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/glanceapp/glance
@@ -13,13 +13,11 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Glance"
-RELEASE=$(curl -fsSL https://api.github.com/repos/glanceapp/glance/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
-cd /opt
-curl -fsSL "https://github.com/glanceapp/glance/releases/download/v${RELEASE}/glance-linux-amd64.tar.gz" -o $(basename "https://github.com/glanceapp/glance/releases/download/v${RELEASE}/glance-linux-amd64.tar.gz")
-mkdir -p /opt/glance
-tar -xzf glance-linux-amd64.tar.gz -C /opt/glance
-cat <<EOF >/opt/glance/glance.yml
+fetch_and_deploy_gh_release "glance" "glanceapp/glance" "prebuild" "latest" "/opt/glance" "glance-linux-$(arch_resolve).tar.gz"
+
+msg_info "Configuring Glance"
+mkdir -p /opt/glance_data
+cat <<EOF >/opt/glance_data/glance.yml
 pages:
   - name: Startpage
     width: slim
@@ -39,37 +37,30 @@ pages:
                   - title: Helper Scripts
                     url: https://github.com/community-scripts/ProxmoxVE
 EOF
-
-echo "${RELEASE}" >"/opt/${APPLICATION}_version.txt"
-msg_ok "Installed Glance"
+msg_ok "Configured Glance"
 
 msg_info "Creating Service"
-service_path="/etc/systemd/system/glance.service"
-echo "[Unit]
+cat <<EOF >/etc/systemd/system/glance.service
+[Unit]
 Description=Glance Daemon
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/glance
-ExecStart=/opt/glance/glance --config /opt/glance/glance.yml
+ExecStart=/opt/glance/glance --config /opt/glance_data/glance.yml
 TimeoutStopSec=20
 KillMode=process
 Restart=on-failure
 
 [Install]
-WantedBy=multi-user.target" >$service_path
-
+WantedBy=multi-user.target
+EOF
 systemctl enable -q --now glance
 msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-rm -rf /opt/glance-linux-amd64.tar.gz
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
