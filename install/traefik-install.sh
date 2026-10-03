@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://traefik.io/
+# Source: https://traefik.io/ | Github: https://github.com/traefik/traefik
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -13,23 +13,16 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Dependencies"
-$STD apt-get install -y gpg
-$STD apt-get install -y apt-transport-https
-msg_ok "Installed Dependencies"
+setup_deb_based() {
+  msg_info "Installing Dependencies"
+  $STD apt install -y apt-transport-https
+  msg_ok "Installed Dependencies"
 
-RELEASE=$(curl -fsSL https://api.github.com/repos/traefik/traefik/releases | grep -oP '"tag_name":\s*"v\K[\d.]+?(?=")' | sort -V | tail -n 1)
-msg_info "Installing Traefik v${RELEASE}"
-mkdir -p /etc/traefik/{conf.d,ssl}
-curl -fsSL "https://github.com/traefik/traefik/releases/download/v${RELEASE}/traefik_v${RELEASE}_linux_amd64.tar.gz" -o $(basename "https://github.com/traefik/traefik/releases/download/v${RELEASE}/traefik_v${RELEASE}_linux_amd64.tar.gz")
-tar -C /tmp -xzf traefik*.tar.gz
-mv /tmp/traefik /usr/bin/
-rm -rf traefik*.tar.gz
-echo "${RELEASE}" >/opt/${APPLICATION}_version.txt
-msg_ok "Installed Traefik v${RELEASE}"
+  fetch_and_deploy_gh_release "traefik" "traefik/traefik" "prebuild" "latest" "/usr/bin" "traefik_v*_linux_$(arch_resolve).tar.gz"
+  mkdir -p /etc/traefik/{conf.d,ssl}
 
-msg_info "Creating Traefik configuration"
-cat <<EOF >/etc/traefik/traefik.yaml
+  msg_info "Creating Traefik configuration"
+  cat <<EOF >/etc/traefik/traefik.yaml
 providers:
   file:
     directory: /etc/traefik/conf.d/
@@ -82,10 +75,10 @@ accessLog:
       names:
         User-Agent: keep
 EOF
-msg_ok "Created Traefik configuration"
+  msg_ok "Created Traefik configuration"
 
-msg_info "Creating Service"
-cat <<EOF >/etc/systemd/system/traefik.service
+  msg_info "Creating Service"
+  cat <<'EOF' >/etc/systemd/system/traefik.service
 [Unit]
 Description=Traefik is an open-source Edge Router that makes publishing your services a fun and easy experience
 
@@ -98,16 +91,38 @@ ExecReload=/bin/kill -USR1 \$MAINPID
 [Install]
 WantedBy=multi-user.target
 EOF
+  systemctl enable -q --now traefik
+  msg_ok "Created Service"
+}
 
-systemctl enable -q --now traefik
-msg_ok "Created Service"
+setup_alpine() {
+  msg_info "Installing Dependencies"
+  $STD apk add ca-certificates
+  $STD update-ca-certificates
+  msg_ok "Installed Dependencies"
+
+  msg_info "Installing Traefik"
+  $STD apk add traefik --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community
+  msg_ok "Installed Traefik"
+
+  read -p "${TAB3}Enable Traefik WebUI (Port 8080)? [y/N]: " enable_webui
+  if [[ "$enable_webui" =~ ^[Yy]$ ]]; then
+    msg_info "Configuring Traefik WebUI"
+    sed -i 's/localhost//g' /etc/traefik/traefik.yaml
+    msg_ok "Configured Traefik WebUI"
+  fi
+
+  msg_info "Enabling and starting Traefik service"
+  $STD rc-update add traefik default
+  sed -i '/^command=.*/i directory="/etc/traefik"' /etc/init.d/traefik
+  $STD rc-service traefik start
+  msg_ok "Traefik service started"
+}
+
+run_os_setup
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

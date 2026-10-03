@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/Forceu/Gokapi
@@ -13,14 +13,12 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Gokapi"
-LATEST=$(curl -fsSL https://api.github.com/repos/Forceu/Gokapi/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
+fetch_and_deploy_gh_release "gokapi" "Forceu/Gokapi" "prebuild" "latest" "/opt/gokapi" "*linux*$(arch_resolve).zip"
+
+msg_info "Configuring Gokapi"
 mkdir -p /opt/gokapi/{data,config}
-curl -fsSL "https://github.com/Forceu/Gokapi/releases/download/$LATEST/gokapi-linux_amd64.zip" -o $(basename "https://github.com/Forceu/Gokapi/releases/download/$LATEST/gokapi-linux_amd64.zip")
-unzip -q gokapi-linux_amd64.zip -d /opt/gokapi
-rm gokapi-linux_amd64.zip
-chmod +x /opt/gokapi/gokapi-linux_amd64
-msg_ok "Installed Gokapi"
+chmod +x /opt/gokapi/gokapi
+msg_ok "Configured Gokapi"
 
 msg_info "Creating Service"
 cat <<EOF >/etc/systemd/system/gokapi.service
@@ -31,7 +29,7 @@ Description=gokapi
 Type=simple
 Environment=GOKAPI_DATA_DIR=/opt/gokapi/data
 Environment=GOKAPI_CONFIG_DIR=/opt/gokapi/config
-ExecStart=/opt/gokapi/gokapi-linux_amd64
+ExecStart=/opt/gokapi/gokapi
 
 [Install]
 WantedBy=multi-user.target
@@ -41,10 +39,6 @@ msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
