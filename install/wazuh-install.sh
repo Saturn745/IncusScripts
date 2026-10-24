@@ -13,9 +13,9 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Fetching Latest Wazuh Version"
-RELEASE=$(curl -fsSL https://api.github.com/repos/wazuh/wazuh/releases/latest | grep '"tag_name"' | awk -F '"' '{print substr($4, 2, length($2)-4)}')
-msg_ok "Latest Wazuh Version: $RELEASE"
+RELEASE=$(get_latest_github_release "wazuh/wazuh" | cut -d. -f1,2)
+
+confirm_external_installer "https://wazuh.com/" "https://packages.wazuh.com/$RELEASE/wazuh-install.sh"
 
 msg_info "Setup Wazuh"
 curl -fsSL https://packages.wazuh.com/$RELEASE/wazuh-install.sh -o wazuh-install.sh
@@ -26,16 +26,20 @@ else
   bash wazuh-install.sh -a | tee -a ~/wazuh-install.output
 fi
 cat ~/wazuh-install.output | grep -E "User|Password" | awk '{$1=$1};1' | sed '1i wazuh-credentials' >~/wazuh.creds
+rm -f wazuh-*.sh
+rm -f ~/wazuh-install.output
 msg_ok "Setup Wazuh"
+
+# Fix LXC container false positives in rootcheck
+# When running Wazuh in an LXC container, /dev/.lxc/* paths trigger false alerts
+if [ -d /dev/.lxc ]; then
+  msg_info "Adding LXC rootcheck exclusion"
+  sed -i '/<\/rootcheck>/i \    <ignore>/dev/.lxc</ignore>' /var/ossec/etc/ossec.conf
+  msg_ok "Added LXC rootcheck exclusion"
+fi
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-rm -f wazuh-*.sh
-rm -f ~/wazuh-install.output
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

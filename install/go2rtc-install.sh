@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/AlexxIT/go2rtc
@@ -12,16 +12,16 @@ catch_errors
 setting_up_container
 network_check
 update_os
+setup_hwaccel
 
-msg_info "Installing go2rtc"
-mkdir -p /opt/go2rtc
-cd /opt/go2rtc
-curl -fsSL "https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_linux_amd64" -o $(basename "https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_linux_amd64")
-chmod +x go2rtc_linux_amd64
-msg_ok "Installed go2rtc"
+msg_info "Installing Dependencies"
+$STD apt install -y ffmpeg
+msg_ok "Installed Dependencies"
+
+USE_ORIGINAL_FILENAME="true" fetch_and_deploy_gh_release "go2rtc" "AlexxIT/go2rtc" "singlefile" "latest" "/opt/go2rtc" "go2rtc_linux_$(arch_resolve)"
 
 msg_info "Creating Service"
-service_path="/etc/systemd/system/go2rtc.service"
+cat <<EOF >/etc/systemd/system/go2rtc.service
 echo "[Unit]
 Description=go2rtc service
 After=network.target
@@ -29,19 +29,17 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/opt/go2rtc/go2rtc_linux_amd64
+WorkingDirectory=/opt/go2rtc
+ExecStart=/opt/go2rtc/go2rtc_linux_$(arch_resolve)
 
 [Install]
-WantedBy=multi-user.target" >$service_path
+WantedBy=multi-user.target
+EOF
 systemctl enable -q --now go2rtc
 msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
