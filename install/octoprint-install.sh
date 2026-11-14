@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://octoprint.org/
@@ -14,13 +14,13 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt-get install -y git \
+$STD apt install -y git \
   libyaml-dev \
   build-essential
 msg_ok "Installed Dependencies"
 
 msg_info "Setup Python3"
-$STD apt-get install -y \
+$STD apt install -y \
   python3 \
   python3-dev \
   python3-pip \
@@ -30,7 +30,13 @@ rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED
 msg_ok "Setup Python3"
 
 msg_info "Creating user octoprint"
-useradd -m -s /bin/bash -p $(openssl passwd -1 octoprint) octoprint
+OCTOPRINT_PASS=$(random_password 20)
+useradd -m -s /bin/bash -p "$(openssl passwd -6 "$OCTOPRINT_PASS")" octoprint
+{
+  echo "OctoPrint Linux user Credentials"
+  echo "Username: octoprint"
+  echo "Password: ${OCTOPRINT_PASS}"
+} >~/octoprint.creds
 usermod -aG sudo,tty,dialout octoprint
 chown -R octoprint:octoprint /opt
 echo "octoprint ALL=NOPASSWD: $(command -v systemctl) restart octoprint, $(command -v reboot), $(command -v poweroff)" >/etc/sudoers.d/octoprint
@@ -70,10 +76,6 @@ msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
