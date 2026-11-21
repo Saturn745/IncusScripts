@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
-# Author: tteck (tteckster)
+# Copyright (c) 2021-2026 tteck
+# Author: tteck (tteckster) | Co-Author: CrazyWolf13, MickLesk
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
-# Source: https://changedetection.io/
+# Source: https://changedetection.io/ | Github: https://github.com/dgtlmoon/changedetection.io
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
@@ -13,148 +13,110 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Dependencies (Patience)"
-$STD apt-get install -y \
-  git \
+msg_info "Installing Dependencies"
+$STD apt install -y \
   build-essential \
-  dumb-init \
-  gconf-service \
-  libjpeg-dev \
-  libatk-bridge2.0-0 \
-  libasound2 \
-  libatk1.0-0 \
-  libcairo2 \
-  libcups2 \
-  libdbus-1-3 \
-  libexpat1 \
-  libgbm-dev \
-  libgbm1 \
-  libgconf-2-4 \
-  libgdk-pixbuf2.0-0 \
-  libglib2.0-0 \
-  libgtk-3-0 \
-  libnspr4 \
-  libnss3 \
-  libpango-1.0-0 \
-  libpangocairo-1.0-0 \
   qpdf \
-  xdg-utils \
   xvfb \
-  ca-certificates \
-  gnupg
+  xauth \
+  python3 \
+  locales \
+  poppler-utils \
+  file
 msg_ok "Installed Dependencies"
 
-msg_info "Setup Python3"
-$STD apt-get install -y \
-  python3 \
-  python3-dev \
-  python3-pip
-rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED
-msg_ok "Setup Python3"
+msg_info "Generating Locales"
+for l in cs_CZ de_DE en_GB en_US es_ES fr_FR id_ID it_IT ja_JP ko_KR \
+  pl_PL pt_BR ru_RU tr_TR uk_UA zh_CN zh_TW; do
+  sed -i "s/^# *${l}.UTF-8 UTF-8/${l}.UTF-8 UTF-8/" /etc/locale.gen
+done
+$STD locale-gen
+msg_ok "Generated Locales"
 
-msg_info "Setting up Node.js Repository"
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" >/etc/apt/sources.list.d/nodesource.list
-msg_ok "Set up Node.js Repository"
-
-msg_info "Installing Node.js"
-$STD apt-get update
-$STD apt-get install -y nodejs
-msg_ok "Installed Node.js"
+PYTHON_VERSION="3.13" setup_uv
 
 msg_info "Installing Change Detection"
-mkdir /opt/changedetection
-$STD pip3 install changedetection.io
+mkdir -p /opt/changedetection
+$STD uv venv --clear /opt/changedetection/.venv
+$STD uv pip install --python /opt/changedetection/.venv/bin/python changedetection.io playwright
+cat <<EOF >/opt/changedetection/.env
+PLAYWRIGHT_DRIVER_URL=ws://127.0.0.1:3000/?headful=true&--window-size=1920,1080
+LC_ALL=en_US.UTF-8
+EOF
 msg_ok "Installed Change Detection"
 
-msg_info "Installing Browserless & Playwright"
-mkdir /opt/browserless
-$STD python3 -m pip install playwright
-$STD git clone https://github.com/browserless/chrome /opt/browserless
-$STD npm install --prefix /opt/browserless
-$STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps &>/dev/null
-$STD /opt/browserless/node_modules/playwright-core/cli.js install --force chrome &>/dev/null
-$STD /opt/browserless/node_modules/playwright-core/cli.js install chromium firefox webkit &>/dev/null
-$STD /opt/browserless/node_modules/playwright-core/cli.js install --force msedge
-$STD npm run build --prefix /opt/browserless
-$STD npm run build:function --prefix /opt/browserless
-$STD npm prune production --prefix /opt/browserless
-msg_ok "Installed Browserless & Playwright"
+msg_info "Installing Chrome"
+setup_deb822_repo \
+  "google-chrome" \
+  "https://dl.google.com/linux/linux_signing_key.pub" \
+  "https://dl.google.com/linux/chrome/deb/" \
+  "stable"
+$STD apt install -y google-chrome-stable
+rm -f /etc/apt/sources.list.d/google-chrome.list
+msg_ok "Installed Chrome"
 
 msg_info "Installing Font Packages"
-$STD apt-get install -y \
+$STD apt install -y \
   fontconfig \
   libfontconfig1 \
   fonts-freefont-ttf \
   fonts-gfs-neohellenic \
   fonts-indic fonts-ipafont-gothic \
-  fonts-kacst fonts-liberation \
+  fonts-kacst-one fonts-liberation \
   fonts-noto-cjk \
   fonts-noto-color-emoji \
-  msttcorefonts \
   fonts-roboto \
   fonts-thai-tlwg \
   fonts-wqy-zenhei
 msg_ok "Installed Font Packages"
 
-msg_info "Installing X11 Packages"
-$STD apt-get install -y \
-  libx11-6 \
-  libx11-xcb1 \
-  libxcb1 \
-  libxcomposite1 \
-  libxcursor1 \
-  libxdamage1 \
-  libxext6 \
-  libxfixes3 \
-  libxi6 \
-  libxrandr2 \
-  libxrender1 \
-  libxss1 \
-  libxtst6
-msg_ok "Installed X11 Packages"
+fetch_and_deploy_gh_release "sockpuppetbrowser" "dgtlmoon/sockpuppetbrowser" "tarball"
+
+msg_info "Setting up SockPuppetBrowser"
+useradd -r -m -s /usr/sbin/nologin chrome
+$STD uv venv --clear --python /usr/bin/python3 /opt/sockpuppetbrowser/.venv
+$STD uv pip install --python /opt/sockpuppetbrowser/.venv/bin/python -r /opt/sockpuppetbrowser/requirements.txt
+msg_ok "Set up SockPuppetBrowser"
 
 msg_info "Creating Services"
-cat <<EOF >/etc/systemd/system/changedetection.service
+cat <<EOF >/etc/systemd/system/sockpuppetbrowser.service
 [Unit]
-Description=Change Detection
-After=network-online.target
-After=network.target browserless.service
-Wants=browserless.service
+Description=SockPuppetBrowser
+After=network.target
+
 [Service]
-Type=simple
-WorkingDirectory=/opt/changedetection
-Environment=WEBDRIVER_URL=http://127.0.0.1:4444/wd/hub
-Environment=PLAYWRIGHT_DRIVER_URL=ws://localhost:3000/chrome?launch={"defaultViewport":{"height":720,"width":1280},"headless":false,"stealth":true}&blockAds=true
-ExecStart=changedetection.io -d /opt/changedetection -p 5000
+User=chrome
+Group=chrome
+WorkingDirectory=/opt/sockpuppetbrowser/backend
+Environment=CHROME_BIN=/usr/bin/google-chrome-stable
+Environment=LOG_LEVEL=INFO
+ExecStart=/opt/sockpuppetbrowser/.venv/bin/python server.py --host 127.0.0.1 --port 3000 --sport 8080
+Restart=on-failure
+
 [Install]
 WantedBy=multi-user.target
 EOF
 
-cat <<EOF >/etc/systemd/system/browserless.service
+cat <<EOF >/etc/systemd/system/changedetection.service
 [Unit]
-Description=browserless service
-After=network.target
-[Service]
-Environment=CONNECTION_TIMEOUT=60000
-WorkingDirectory=/opt/browserless
-ExecStart=/opt/browserless/scripts/start.sh
-SyslogIdentifier=browserless
-[Install]
-WantedBy=default.target
-EOF
+Description=Change Detection
+After=network-online.target sockpuppetbrowser.service
+Wants=sockpuppetbrowser.service
 
-systemctl enable -q --now browserless
-systemctl enable -q --now changedetection
+[Service]
+Type=simple
+EnvironmentFile=/opt/changedetection/.env
+WorkingDirectory=/opt/changedetection
+ExecStart=/opt/changedetection/.venv/bin/changedetection.io -d /opt/changedetection -p 5000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable -q --now sockpuppetbrowser changedetection
 msg_ok "Created Services"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon

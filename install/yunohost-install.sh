@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 tteck
+# Copyright (c) 2021-2026 tteck
 # Author: tteck (tteckster)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://yunohost.org/
@@ -14,11 +14,13 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt-get install -y gnupg
-$STD apt-get install -y apt-transport-https
-$STD apt-get install -y lsb-release
-$STD apt-get install -y ca-certificates
+$STD apt install -y \
+  apt-transport-https \
+  lsb-release \
+  ca-certificates
 msg_ok "Installed Dependencies"
+
+confirm_external_installer "https://yunohost.org/" "https://install.yunohost.org"
 
 msg_info "Installing YunoHost (Patience)"
 touch /etc/.pve-ignore.resolv.conf
@@ -28,10 +30,6 @@ msg_ok "Installed YunoHost"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
