@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 community-scripts ORG
+# Copyright (c) 2021-2026 community-scripts ORG
 # Author: Michel Roegl-Brunner (michelroegl-brunner)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://zammad.com
@@ -14,47 +14,64 @@ network_check
 update_os
 
 msg_info "Installing Dependencies"
-$STD apt-get install -y \
+$STD apt install -y \
   git \
-  gpg \
-  nginx \
-  apt-transport-https \
-  gnupg
+  nginx
 msg_ok "Installed Dependencies"
 
 msg_info "Setting up Elasticsearch"
-curl -fsSL https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/7.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-7.x.list >/dev/null
-$STD apt-get update
-$STD apt-get -y install elasticsearch
-echo "-Xms2g" >>/etc/elasticsearch/jvm.options
-echo "-Xmx2g" >>/etc/elasticsearch/jvm.options
-$STD /usr/share/elasticsearch/bin/elasticsearch-plugin install ingest-attachment -b
-systemctl -q restart elasticsearch
+setup_deb822_repo \
+  "elasticsearch" \
+  "https://artifacts.elastic.co/GPG-KEY-elasticsearch" \
+  "https://artifacts.elastic.co/packages/8.x/apt" \
+  "stable" \
+  "main"
+ES_JAVA_OPTS="-Xms1g -Xmx1g" $STD apt install -y elasticsearch
+cat <<EOF >/etc/elasticsearch/jvm.options.d/heap.options
+-Xms2g
+-Xmx2g
+EOF
+cat <<EOF >/etc/elasticsearch/elasticsearch.yml
+path.data: /var/lib/elasticsearch
+path.logs: /var/log/elasticsearch
+discovery.type: single-node
+network.host: 127.0.0.1
+xpack.security.enabled: false
+xpack.security.transport.ssl.enabled: false
+xpack.security.http.ssl.enabled: false
+bootstrap.memory_lock: false
+EOF
+systemctl daemon-reload
+systemctl enable -q elasticsearch
+systemctl restart -q elasticsearch
+for i in $(seq 1 30); do
+  if curl -s http://127.0.0.1:9200 >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
 msg_ok "Setup Elasticsearch"
 
 msg_info "Installing Zammad"
-curl -fsSL https://dl.packager.io/srv/zammad/zammad/key | gpg --dearmor | sudo tee /etc/apt/keyrings/pkgr-zammad.gpg >/dev/null
-echo "deb [signed-by=/etc/apt/keyrings/pkgr-zammad.gpg] https://dl.packager.io/srv/deb/zammad/zammad/stable/debian 12 main" | sudo tee /etc/apt/sources.list.d/zammad.list >/dev/null
-$STD apt-get update
-$STD apt-get -y install zammad
-$STD zammad run rails r "Setting.set('es_url', 'http://localhost:9200')"
+setup_deb822_repo \
+  "zammad" \
+  "https://go.packager.io/srv/deb/zammad/zammad/gpg-key.asc" \
+  "https://go.packager.io/srv/deb/zammad/zammad/stable/debian" \
+  "$(get_os_info version_id)" \
+  "main"
+$STD apt install -y zammad
+$STD zammad run rails r "Setting.set('es_url', 'http://127.0.0.1:9200')"
 $STD zammad run rake zammad:searchindex:rebuild
 msg_ok "Installed Zammad"
 
 msg_info "Setup Services"
 cp /opt/zammad/contrib/nginx/zammad.conf /etc/nginx/sites-available/zammad.conf
-IPADDRESS=$(hostname -I | awk '{print $1}')
-sed -i "s/server_name localhost;/server_name $IPADDRESS;/g" /etc/nginx/sites-available/zammad.conf
-$STD systemctl reload nginx
+sed -i "s/server_name localhost;/server_name $LOCAL_IP;/g" /etc/nginx/sites-available/zammad.conf
+nginx_enable_site zammad.conf
 msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
