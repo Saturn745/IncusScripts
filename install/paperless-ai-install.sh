@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2021-2025 community-scripts ORG
+# Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/clusterzx/paperless-ai
@@ -13,56 +13,16 @@ setting_up_container
 network_check
 update_os
 
-msg_info "Installing Dependencies"
-$STD apt-get install -y \
-  gpg \
-  build-essential
-msg_ok "Installed Dependencies"
-
-msg_info "Setting up Node.js Repository"
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" >/etc/apt/sources.list.d/nodesource.list
-msg_ok "Set up Node.js Repository"
-
-msg_info "Installing Node.js"
-$STD apt-get update
-$STD apt-get install -y nodejs
-msg_ok "Installed Node.js"
+NODE_VERSION="22" setup_nodejs
+fetch_and_deploy_gh_release "paperless-ai" "clusterzx/paperless-ai" "tarball"
 
 msg_info "Setup Paperless-AI"
-cd /opt
-RELEASE=$(curl -fsSL https://api.github.com/repos/clusterzx/paperless-ai/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
-curl -fsSL "https://github.com/clusterzx/paperless-ai/archive/refs/tags/v${RELEASE}.zip" -o $(basename "https://github.com/clusterzx/paperless-ai/archive/refs/tags/v${RELEASE}.zip")
-unzip -q v${RELEASE}.zip
-mv paperless-ai-${RELEASE} /opt/paperless-ai
 cd /opt/paperless-ai
-$STD npm install
+export ONNXRUNTIME_NODE_INSTALL=skip PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+$STD npm ci --ignore-scripts --no-audit --no-fund
+$STD npm run build
+$STD npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 mkdir -p /opt/paperless-ai/data
-cat <<EOF >/opt/paperless-ai/data/.env
-PAPERLESS_API_URL=
-PAPERLESS_API_TOKEN=
-PAPERLESS_USERNAME=
-AI_PROVIDER=openai
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4o-mini
-OLLAMA_API_URL=
-OLLAMA_MODEL=
-SCAN_INTERVAL=*/10 * * * *
-SYSTEM_PROMPT=""
-PROCESS_PREDEFINED_DOCUMENTS=no
-TAGS=
-ADD_AI_PROCESSED_TAG=no
-AI_PROCESSED_TAG_NAME=ki-gen
-USE_PROMPT_TAGS=no
-PROMPT_TAGS=
-USE_EXISTING_DATA=no
-API_KEY=
-CUSTOM_API_KEY=
-CUSTOM_BASE_URL=
-CUSTOM_MODEL=
-EOF
-echo "${RELEASE}" >"/opt/${APPLICATION}_version.txt"
 msg_ok "Setup Paperless-AI"
 
 msg_info "Creating Service"
@@ -73,7 +33,11 @@ After=network.target
 
 [Service]
 WorkingDirectory=/opt/paperless-ai
-ExecStart=/usr/bin/npm start
+Environment="NODE_ENV=production"
+Environment="PAPERLESS_AI_PORT=3000"
+Environment="PAPERLESS_AI_DATA_DIR=/opt/paperless-ai/data"
+Environment="HF_HUB_DISABLE_TELEMETRY=1"
+ExecStart=/usr/bin/node dist/server/index.js
 Restart=always
 
 [Install]
@@ -84,11 +48,6 @@ msg_ok "Created Service"
 
 motd_ssh
 customize
-
-msg_info "Cleaning up"
-rm -rf /opt/v${RELEASE}.zip
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+cleanup_lxc
 
 # Modified by surgeon https://github.com/bketelsen/surgeon
